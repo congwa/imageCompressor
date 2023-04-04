@@ -1,2 +1,2 @@
-# image-lossless-compressor-go
+# imageCompressor-go
 lossless compress images and convert to WebP format
