@@ -1,16 +1,17 @@
-package main
+package imageCompressor
 
 import (
 	"bytes"
 	"fmt"
 	"image"
-	"image/color"
 	"image/jpeg"
 	"image/png"
 	"io"
 	"io/ioutil"
 	"os"
 	"os/exec"
+	"runtime"
+	"strconv"
 
 	"github.com/chai2010/webp"
 	"github.com/disintegration/imaging"
@@ -37,19 +38,14 @@ func CompressImage(inputPath string, outputPath string) error {
 	// 判断是否需要转换 PNG 格式
 	if format == "png" {
 		// 检查是否含有透明通道
-		hasAlpha, err := hasAlpha(inputPath)
+		hasAlpha, err := hasAlpha(img)
 
 		if hasAlpha {
 			println("有透明度")
+
 			// 使用 Oxipng 压缩 PNG 格式图片
-			pngBytes, err := oxipngCompress(inputPath)
-			if err != nil {
-				return err
-			}
-			img, _, err = image.Decode(bytes.NewReader(pngBytes))
-			if err != nil {
-				return err
-			}
+			img, _ = oxipngCompress(img, 90)
+
 			format = "png"
 		} else {
 			println("无透明度")
@@ -57,10 +53,6 @@ func CompressImage(inputPath string, outputPath string) error {
 			buf := new(bytes.Buffer)
 			err = imaging.Encode(buf, img, imaging.JPEG, imaging.JPEGQuality(90))
 
-			// if err != nil {
-			// 	return err
-			// }
-			// err = jpeg.Encode(buf, img, &jpeg.Options{Quality: 90})
 			if err != nil {
 				return err
 			}
@@ -74,6 +66,7 @@ func CompressImage(inputPath string, outputPath string) error {
 
 	// 压缩图片
 	if format == "jpeg" {
+		println("压缩图片jpeg")
 		img, _ = compressJPEG(img, 90)
 	}
 
@@ -102,6 +95,7 @@ func CompressImage(inputPath string, outputPath string) error {
 		}
 	} else {
 		// 使用压缩后的图片
+		fmt.Println("WriteFile ", outputPath)
 		err = ioutil.WriteFile(outputPath, webpBytes, 0644)
 		if err != nil {
 			return err
@@ -110,26 +104,17 @@ func CompressImage(inputPath string, outputPath string) error {
 	return nil
 }
 
-func hasAlpha(filepath string) (bool, error) {
-	// 打开 PNG 图片
-	file, err := os.Open(filepath)
-	if err != nil {
-		return false, err
+func hasAlpha(img image.Image) (bool, error) {
+	bounds := img.Bounds()
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			_, _, _, alpha := img.At(x, y).RGBA()
+			if alpha != 0xffff {
+				return true, nil
+			}
+		}
 	}
-	defer file.Close()
-
-	// 使用 DecodeConfig 函数获取图片的详细信息
-	pngConfig, err := png.DecodeConfig(file)
-	if err != nil {
-		return false, err
-	}
-
-	// 判断颜色模式
-	if pngConfig.ColorModel == color.RGBAModel {
-		return true, nil
-	} else {
-		return false, nil
-	}
+	return false, nil
 }
 
 func getFileSize(path string) ([]byte, error) {
@@ -154,15 +139,33 @@ func compressJPEG(img image.Image, quality int) (image.Image, error) {
 		return nil, err
 	}
 
-	// 使用 jpegtran 命令行工具来压缩 JPEG 图像
-	cmd := exec.Command("jpegtran", "-optimize", "-progressive", "-copy", "none")
+	cmdPath := "./cjpeg_linux"
+
+	switch runtime.GOOS {
+	case "windows":
+		cmdPath = "./cjpeg.exe"
+	case "linux":
+		cmdPath = "./cjpeg_linux"
+	case "darwin":
+		cmdPath = "./cjpeg_mac"
+	default:
+		cmdPath = "./cjpeg_linux"
+	}
+
+	args := []string{"-quality", strconv.Itoa(quality)}
+	cmd := exec.Command(cmdPath, args...)
+
 	cmd.Stdin = bytes.NewReader(buf.Bytes())
 	var out bytes.Buffer
 	cmd.Stdout = &out
 
+	var err1 bytes.Buffer
+	cmd.Stderr = &err1
+
 	err = cmd.Run()
 
 	if err != nil {
+		fmt.Sprintf("mozjpeg failed: %s\n\n%s", err, err1.String())
 		return nil, err
 	}
 
@@ -176,39 +179,47 @@ func compressJPEG(img image.Image, quality int) (image.Image, error) {
 	return compressedImg, nil
 }
 
-func oxipngCompress(inputPath string) ([]byte, error) {
-	file, err := os.Open(inputPath)
+func oxipngCompress(img image.Image, quality int) (image.Image, error) {
+	// 根据操作系统选择 oxipng 工具路径
+	var cmdPath string
+	switch runtime.GOOS {
+	case "windows":
+		cmdPath = "./oxipng.exe"
+	case "linux":
+		cmdPath = "./oxipng_linux"
+	case "darwin":
+		cmdPath = "./oxipng_mac"
+	default:
+		cmdPath = "./oxipng_linux"
+	}
+
+	fmt.Println(cmdPath)
+
+	// 将图像编码为 PNG 格式
+	buf := new(bytes.Buffer)
+	// err := imaging.Encode(buf, img, imaging.PNG, imaging.PNGCompressionLevel(20))
+	err := png.Encode(buf, img)
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	cmd := exec.Command(cmdPath)
 
-	img, _, err := image.Decode(file)
-	if err != nil {
-		return nil, err
-	}
+	cmd.Stdin = bytes.NewReader(buf.Bytes())
+	var out bytes.Buffer
+	cmd.Stdout = &out
 
-	buffer := new(bytes.Buffer)
-	err = png.Encode(buffer, img)
-	if err != nil {
-		return nil, err
-	}
+	var err1 bytes.Buffer
+	cmd.Stderr = &err1
 
-	cmd := exec.Command("oxipng", "-o7")
-	input := bytes.NewReader(buffer.Bytes())
-	cmd.Stdin = input
-	var output bytes.Buffer
-	cmd.Stdout = &output
 	err = cmd.Run()
-	if err != nil {
-		return nil, err
-	}
 
-	return output.Bytes(), nil
+	img, _, err = image.Decode(buf)
+	return img, nil
 }
 
 // 使用 Go 语言编写的文件复制函数
 func copyFile(src string, dst string, mode os.FileMode) (err error) {
+	fmt.Println("copyFile ", src)
 	sourceFileStat, err := os.Stat(src)
 	if err != nil {
 		return err
@@ -239,8 +250,8 @@ func copyFile(src string, dst string, mode os.FileMode) (err error) {
 }
 
 // func main() {
-// 	inputPath := "./input/image.png"
-// 	outputPath := "./output/image.webp"
+// 	inputPath := "./input/ai-gen-5.png"
+// 	outputPath := "./output/ai-gen-5.webp"
 // 	err := CompressImage(inputPath, outputPath)
 // 	if err != nil {
 // 		log.Fatal(err)
