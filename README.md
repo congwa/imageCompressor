@@ -8,6 +8,27 @@ lossless compress images and convert to WebP format
 ![Alt text](/imgs/result.png)
 **5.2MB -> 223KB**
 
+## 使用
+
+```golang
+//导入包
+got get -u https://github.com/congwa/imageCompressor
+
+package imageCompressor
+
+// 使用1
+// 参数 图片路径
+img,format,err := imageCompressor.CompressImageGetImage(inputPath)
+
+// img为图片的image.Image对象， format为图片的格式 png或者jpeg
+
+// 使用2
+// 传入要压缩的图片路径 和要放入的图片路径  需要绝对路径
+err := imageCompressor.CompressImageGetImage(inputPath, outPutPath)
+
+
+```
+
 ## 功能
 
 - 压缩图片以减小文件大小

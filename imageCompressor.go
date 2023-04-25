@@ -17,6 +17,68 @@ import (
 	"github.com/disintegration/imaging"
 )
 
+// 获取图片的image.Image 和图片格式
+func CompressImageGetImage(inputPath string, quality int) (image.Image, string, error) {
+	// 读取原始图片
+	file, err := os.Open(inputPath)
+	if err != nil {
+		return nil, "", err
+	}
+	defer file.Close()
+
+	img, format, err := image.Decode(file)
+	if err != nil {
+		return nil, "", err
+	}
+
+	// 判断图片格式是否为 JPEG 或 PNG
+	if format != "jpeg" && format != "png" {
+		return nil, "", fmt.Errorf("unsupported image format: %s", format)
+	}
+
+	// 判断是否需要转换 PNG 格式
+	if format == "png" {
+		// 检查是否含有透明通道
+		_hasAlpha, err := hasAlpha(img)
+
+		if err != nil {
+			return nil, "", err
+		}
+
+		if _hasAlpha {
+			println("有透明度")
+
+			// 使用 Oxipng 压缩 PNG 格式图片
+			img, _ = oxipngCompress(img, 90)
+
+			format = "png"
+		} else {
+			println("无透明度")
+			// 转换 PNG 格式为 JPEG 格式
+			buf := new(bytes.Buffer)
+			err = imaging.Encode(buf, img, imaging.JPEG, imaging.JPEGQuality(90))
+
+			if err != nil {
+				return nil, "", err
+			}
+			img, _, err = image.Decode(buf)
+			if err != nil {
+				return nil, "", err
+			}
+			format = "jpeg"
+		}
+	}
+
+	// 压缩图片
+	if format == "jpeg" {
+		println("压缩图片jpeg")
+		img, _ = compressJPEG(img, 90)
+	}
+
+	// 将压缩后的图片转为 WebP 格式
+	return img, format, nil
+}
+
 func CompressImage(inputPath string, outputPath string) error {
 	// 读取原始图片
 	file, err := os.Open(inputPath)
@@ -38,9 +100,13 @@ func CompressImage(inputPath string, outputPath string) error {
 	// 判断是否需要转换 PNG 格式
 	if format == "png" {
 		// 检查是否含有透明通道
-		hasAlpha, err := hasAlpha(img)
+		_hasAlpha, err := hasAlpha(img)
 
-		if hasAlpha {
+		if err != nil {
+			return err
+		}
+
+		if _hasAlpha {
 			println("有透明度")
 
 			// 使用 Oxipng 压缩 PNG 格式图片
