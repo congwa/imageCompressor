@@ -44,12 +44,14 @@ err := imageCompressor.CompressImageGetImage(inputPath, outPutPath)
 
 [node版本](https://github.com/congwa/image-lossless-compressor)
 
-## 未来计划
 
-由于时间关系，目前正在公司搬砖中，以后编写
+## 如果你想了解更多关于图片处理的事情
 
-1. 发布一个wasm包模块
-2. 单独导出png或者jpg
+[图片处理以wasm形式在浏览器处理](https://github.com/congwa/wasm-codecs-browser)
+
+同时，欢迎来我的[博客](https://github.com/congwa/Front-end-Basics-Notes)转转，你会和我一起成长。
+
+
 
 ## 许可证
 
