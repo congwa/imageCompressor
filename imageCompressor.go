@@ -2,6 +2,7 @@ package imageCompressor
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"image"
 	"image/jpeg"
@@ -18,15 +19,9 @@ import (
 )
 
 // 获取图片的image.Image 和图片格式
-func CompressImageGetImage(inputPath string, quality int) (image.Image, string, error) {
-	// 读取原始图片
-	file, err := os.Open(inputPath)
-	if err != nil {
-		return nil, "", err
-	}
-	defer file.Close()
+func CompressImageGetImage(img image.Image, quality int) (image.Image, string, error) {
 
-	img, format, err := image.Decode(file)
+	format, err := getImageType(img)
 	if err != nil {
 		return nil, "", err
 	}
@@ -49,33 +44,21 @@ func CompressImageGetImage(inputPath string, quality int) (image.Image, string, 
 			println("有透明度")
 
 			// 使用 Oxipng 压缩 PNG 格式图片
-			img, _ = oxipngCompress(img, 90)
+			img, _ = oxipngCompress(img)
 
 			format = "png"
 		} else {
 			println("无透明度")
 			// 转换 PNG 格式为 JPEG 格式
 			buf := new(bytes.Buffer)
-			err = imaging.Encode(buf, img, imaging.JPEG, imaging.JPEGQuality(90))
-
+			err := imaging.Encode(buf, img, imaging.JPEG)
 			if err != nil {
 				return nil, "", err
 			}
-			img, _, err = image.Decode(buf)
-			if err != nil {
-				return nil, "", err
-			}
+			img, _ = compressJPEG(buf.Bytes(), quality)
 			format = "jpeg"
 		}
 	}
-
-	// 压缩图片
-	if format == "jpeg" {
-		println("压缩图片jpeg")
-		img, _ = compressJPEG(img, 90)
-	}
-
-	// 将压缩后的图片转为 WebP 格式
 	return img, format, nil
 }
 
@@ -110,30 +93,19 @@ func CompressImage(inputPath string, outputPath string) error {
 			println("有透明度")
 
 			// 使用 Oxipng 压缩 PNG 格式图片
-			img, _ = oxipngCompress(img, 90)
+			img, _ = oxipngCompress(img)
 
 			format = "png"
 		} else {
 			println("无透明度")
 			// 转换 PNG 格式为 JPEG 格式
 			buf := new(bytes.Buffer)
-			err = imaging.Encode(buf, img, imaging.JPEG, imaging.JPEGQuality(90))
-
-			if err != nil {
-				return err
-			}
-			img, _, err = image.Decode(buf)
-			if err != nil {
-				return err
-			}
-			format = "jpeg"
+			// err := imaging.Encode(buf, img, imaging.JPEG)
+			// if err != nil {
+			// 	return err
+			// }
+			img, _ = compressJPEG(buf.Bytes(), 75)
 		}
-	}
-
-	// 压缩图片
-	if format == "jpeg" {
-		println("压缩图片jpeg")
-		img, _ = compressJPEG(img, 90)
 	}
 
 	// 将压缩后的图片转为 WebP 格式
@@ -196,14 +168,7 @@ func getFileSize(path string) ([]byte, error) {
 }
 
 // 使用mozJpeg压缩
-func compressJPEG(img image.Image, quality int) (image.Image, error) {
-	// 将图像编码为 JPEG 格式
-	var buf bytes.Buffer
-	err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: quality})
-
-	if err != nil {
-		return nil, err
-	}
+func compressJPEG(buf []byte, quality int) (image.Image, error) {
 
 	cmdPath := "./cjpeg_linux"
 
@@ -218,17 +183,17 @@ func compressJPEG(img image.Image, quality int) (image.Image, error) {
 		cmdPath = "./cjpeg_linux"
 	}
 
-	args := []string{"-quality", strconv.Itoa(quality)}
+	args := []string{"-quality", strconv.Itoa(20)}
 	cmd := exec.Command(cmdPath, args...)
 
-	cmd.Stdin = bytes.NewReader(buf.Bytes())
+	cmd.Stdin = bytes.NewReader(buf)
 	var out bytes.Buffer
 	cmd.Stdout = &out
 
 	var err1 bytes.Buffer
 	cmd.Stderr = &err1
 
-	err = cmd.Run()
+	err := cmd.Run()
 
 	if err != nil {
 		fmt.Sprintf("mozjpeg failed: %s\n\n%s", err, err1.String())
@@ -245,7 +210,7 @@ func compressJPEG(img image.Image, quality int) (image.Image, error) {
 	return compressedImg, nil
 }
 
-func oxipngCompress(img image.Image, quality int) (image.Image, error) {
+func oxipngCompress(img image.Image) (image.Image, error) {
 	// 根据操作系统选择 oxipng 工具路径
 	var cmdPath string
 	switch runtime.GOOS {
@@ -268,6 +233,7 @@ func oxipngCompress(img image.Image, quality int) (image.Image, error) {
 	if err != nil {
 		return nil, err
 	}
+	// args := []string{"-o", strconv.Itoa(quality)}
 	cmd := exec.Command(cmdPath)
 
 	cmd.Stdin = bytes.NewReader(buf.Bytes())
@@ -281,6 +247,25 @@ func oxipngCompress(img image.Image, quality int) (image.Image, error) {
 
 	img, _, err = image.Decode(buf)
 	return img, nil
+}
+
+func getImageType(img image.Image) (string, error) {
+	switch img.(type) {
+	case *image.RGBA:
+		return "png", nil
+	case *image.NRGBA:
+		return "png", nil
+	case *image.YCbCr:
+		return "jpeg", nil
+	case *image.CMYK:
+		return "jpeg", nil
+	case *image.Gray:
+		return "jpeg", nil
+	case *image.Gray16:
+		return "png", nil
+	default:
+		return "", errors.New("不支持的图片类型")
+	}
 }
 
 // 使用 Go 语言编写的文件复制函数
@@ -314,13 +299,3 @@ func copyFile(src string, dst string, mode os.FileMode) (err error) {
 	_, err = io.Copy(destination, source)
 	return err
 }
-
-// func main() {
-// 	inputPath := "./input/ai-gen-5.png"
-// 	outputPath := "./output/ai-gen-5.webp"
-// 	err := CompressImage(inputPath, outputPath)
-// 	if err != nil {
-// 		log.Fatal(err)
-// 	}
-// 	fmt.Println("图片压缩成功！")
-// }
