@@ -17,8 +17,8 @@ got get -u https://github.com/congwa/imageCompressor
 package imageCompressor
 
 // 使用1
-// 参数 图片路径
-img,format,err := imageCompressor.CompressImageGetImage(inputPath)
+// 参数 image.Image
+img,format,err := imageCompressor.CompressImageGetImage(image image.Image)
 
 // img为图片的image.Image对象， format为图片的格式 png或者jpeg
 
